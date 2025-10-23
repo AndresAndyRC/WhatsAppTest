@@ -1,27 +1,31 @@
-# index.py
 # --------------------------------------------
 # Chatbot de prueba para WhatsApp Business API
 # Desplegado en Vercel usando FastAPI
+# Autor: AndresAndyRC
 # --------------------------------------------
 
 from fastapi import FastAPI, Request
+from fastapi.responses import Response
 import requests, os
 from dotenv import load_dotenv
 
-# Cargar variables de entorno locales (útil para pruebas locales)
+# -----------------------------------------------------------
+# Cargar variables de entorno (para entorno local o Vercel)
+# -----------------------------------------------------------
 load_dotenv()
 
-# Variables necesarias (deben existir en el panel de Vercel → Environment Variables)
-META_TOKEN = os.getenv("META_TOKEN")
-PHONE_ID = os.getenv("PHONE_ID")
-VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
+META_TOKEN = os.getenv("META_TOKEN")   # Token de acceso de la API de Meta
+PHONE_ID = os.getenv("PHONE_ID")       # ID del número de WhatsApp Business
+VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")  # Token para verificar el webhook
 
+# -----------------------------------------------------------
 # Inicializar aplicación FastAPI
+# -----------------------------------------------------------
 app = FastAPI()
 
 
 # -----------------------------------------------------------
-# Ruta raíz: solo para verificar que el servidor está activo
+# Ruta raíz: para confirmar que el servidor está activo
 # -----------------------------------------------------------
 @app.get("/")
 async def home():
@@ -32,25 +36,27 @@ async def home():
 
 
 # -----------------------------------------------------------
-# Verificación del webhook (GET)
+# ✅ Verificación del Webhook (GET)
 # Meta enviará esta solicitud al configurar el webhook
 # -----------------------------------------------------------
 @app.get("/api/webhook")
-async def verify_webhook(
-    hub_mode: str = None,
-    hub_verify_token: str = None,
-    hub_challenge: str = None
-):
-    if hub_mode == "subscribe" and hub_verify_token == VERIFY_TOKEN:
+async def verify_webhook(request: Request):
+    mode = request.query_params.get("hub.mode")
+    token = request.query_params.get("hub.verify_token")
+    challenge = request.query_params.get("hub.challenge")
+
+    # Validar token
+    if mode == "subscribe" and token == VERIFY_TOKEN:
         print("✅ Webhook verificado correctamente con Meta")
-        return int(hub_challenge)
+        # Meta espera una respuesta tipo texto plano, no JSON
+        return Response(content=challenge, media_type="text/plain")
     else:
         print("❌ Token inválido o modo incorrecto")
         return {"error": "Verificación fallida"}
 
 
 # -----------------------------------------------------------
-# Recepción de mensajes (POST)
+# 📩 Recepción de mensajes (POST)
 # Meta enviará aquí los mensajes entrantes
 # -----------------------------------------------------------
 @app.post("/api/webhook")
@@ -64,18 +70,18 @@ async def receive_message(request: Request):
         value = changes["value"]
         messages = value.get("messages", [])
 
-        # Si no hay mensajes, solo se confirma la recepción
+        # Si no hay mensajes (por ejemplo, actualizaciones de estado)
         if not messages:
             return {"status": "no_messages"}
 
         msg = messages[0]
-        sender = msg["from"]
-        text = msg["text"]["body"]
+        sender = msg["from"]  # Número del usuario
+        text = msg["text"]["body"]  # Texto del mensaje recibido
 
         # Procesar mensaje recibido
         reply = process_message(text)
 
-        # Enviar respuesta al usuario por WhatsApp
+        # Enviar respuesta por WhatsApp
         send_whatsapp_message(sender, reply)
 
     except Exception as e:
@@ -85,8 +91,7 @@ async def receive_message(request: Request):
 
 
 # -----------------------------------------------------------
-# Función para procesar el texto entrante
-# Aquí defines las respuestas automáticas
+# 🧠 Procesamiento del mensaje (lógica del bot)
 # -----------------------------------------------------------
 def process_message(text: str) -> str:
     text = text.lower()
@@ -102,7 +107,7 @@ def process_message(text: str) -> str:
 
 
 # -----------------------------------------------------------
-# Función para enviar mensajes a través de la API de Meta
+# ✉️ Enviar mensaje a través de la API de Meta
 # -----------------------------------------------------------
 def send_whatsapp_message(to: str, text: str):
     try:
